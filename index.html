@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading 5.6 Million Lungs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Caveat:wght@500;700&family=DM+Sans:opsz,wght@9..40,400;9..40,600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a lightbox of postcards. Each section = one big picture + a hand-written key, Dear Data style. Single bright theme by choice. */
+:root{
+  --bg:#eef3ff; --card:#ffffff; --ink:#1a1446; --muted:#5a5784;
+  --coral:#ff3d5a; --cyan:#0096ff; --sun:#ffb800; --violet:#7a4dff; --mint:#00b884; --grid:#d9e1f7;
+  --display:"Bricolage Grotesque", "Arial Black", sans-serif; --hand:"Caveat", "Comic Sans MS", cursive; --body:"DM Sans", system-ui, sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto} *{animation:none!important;transition:none!important}}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.55 var(--body)}
+a{color:var(--violet)}
+:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+
+/* top bar */
+.bar{position:sticky;top:0;z-index:5;background:var(--ink);color:#fff}
+.bar .wrap{display:flex;gap:6px;align-items:center;overflow-x:auto;padding-top:8px;padding-bottom:8px}
+.bar a{color:#fff;text-decoration:none;font:600 14px var(--body);padding:6px 12px;border-radius:999px;white-space:nowrap}
+.bar a:hover,.bar a.on{background:var(--sun);color:var(--ink)}
+.bar .hint{margin-left:auto;font:500 18px var(--hand);color:var(--sun);white-space:nowrap}
+
+/* hero */
+.hero{padding:42px 0 30px}
+.hero-grid{display:grid;grid-template-columns:1fr 1.15fr;gap:34px;align-items:center}
+.kick{font:700 13px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--violet)}
+h1{font:800 clamp(44px,7vw,84px)/.95 var(--display);margin:12px 0 16px;letter-spacing:-.02em}
+h1 em{font-style:normal;color:var(--coral)}
+.lede{font-size:21px;max-width:30ch;margin:0}
+.lightbox{background:#0f0b2e;border-radius:18px;padding:16px;box-shadow:0 18px 40px -18px #1a144680}
+.lightbox canvas{width:100%;height:auto;display:block}
+.lb-key{display:flex;justify-content:space-between;gap:10px;color:#cfd6ff;font:500 20px var(--hand);margin-top:8px;flex-wrap:wrap}
+.lb-key b{color:var(--coral)}
+
+/* sections */
+section{padding:46px 0 30px}
+.sec-head{display:flex;gap:18px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap}
+.num{font:800 76px/.8 var(--display);color:var(--sun);-webkit-text-stroke:2px var(--ink)}
+h2{font:800 clamp(30px,4.4vw,48px)/1.02 var(--display);margin:0;letter-spacing:-.01em;text-wrap:balance;max-width:20ch}
+.say{font-size:19px;max-width:58ch;margin:10px 0 22px}
+.say b{background:linear-gradient(transparent 60%,#ffb80070 60%)}
+
+/* postcard */
+.postcard{display:grid;grid-template-columns:1fr 250px;background:var(--card);border-radius:16px;box-shadow:0 2px 0 var(--grid),0 16px 30px -22px #1a144660;overflow:hidden;margin:18px 0}
+.pc-front{padding:20px 22px;min-width:0}
+.pc-back{background:repeating-linear-gradient(#fffdf4 0 27px,#e9e3c9 27px 28px);padding:18px 18px 18px 22px;border-left:2px dashed #d8cfa8;font:500 20px/28px var(--hand);color:#3a3461;position:relative}
+.pc-back h4{margin:0 0 4px;font:700 24px/28px var(--hand);color:var(--coral)}
+.pc-back .stamp{position:absolute;top:12px;right:12px;width:46px;height:54px;border:2px dashed var(--violet);border-radius:4px;display:grid;place-items:center;font:700 13px var(--body);color:var(--violet);transform:rotate(6deg);background:#fff}
+.pc-back p{margin:0}
+.pc-title{font:800 22px/1.15 var(--display);margin:0 0 4px}
+.pc-sub{color:var(--muted);font-size:14px;margin:0 0 8px}
+.chart{width:100%;overflow-x:auto}
+.chart svg{display:block;width:100%;height:auto;min-width:520px}
+svg text{font-family:var(--body);fill:var(--muted);font-size:13px}
+svg .hand{font-family:var(--hand);font-size:22px;font-weight:700}
+.src{font-size:12px;color:var(--muted);margin-top:8px}
+.src a{color:var(--muted)}
+sup a{text-decoration:none;font-weight:600;color:var(--violet);font-size:12px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.row2 .postcard{grid-template-columns:1fr;margin:0}
+.row2 .pc-back{border-left:0;border-top:2px dashed #d8cfa8}
+
+/* big number strip */
+.strip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:8px 0 6px}
+.chip{border-radius:14px;padding:16px;color:#fff}
+.chip b{display:block;font:800 34px/1 var(--display);font-variant-numeric:tabular-nums}
+.chip span{font-size:14px;opacity:.95}
+.c1{background:var(--cyan)}.c2{background:var(--coral)}.c3{background:var(--violet)}.c4{background:var(--mint)}
+
+/* question card */
+.q{background:var(--ink);color:#fff;border-radius:16px;padding:22px 24px;margin:20px 0;display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center}
+.q .big{font:800 64px/1 var(--display);color:var(--sun)}
+.q p{margin:0;font-size:19px}
+.q small{display:block;font:700 12px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--sun);margin-bottom:4px}
+
+/* people icons */
+.people{display:flex;flex-direction:column;gap:14px}
+.prow{display:grid;grid-template-columns:90px 1fr 56px;gap:10px;align-items:center;font-weight:600}
+.icons{display:flex;flex-wrap:wrap;gap:3px}
+.icons svg{width:14px;height:22px}
+.prow .val{font:800 26px var(--display)}
+
+/* pipeline */
+.pipe{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;position:relative;margin:10px 0 4px}
+.step{background:var(--bg);border-radius:14px;padding:14px 10px;text-align:center;position:relative}
+.step .ic{width:56px;height:56px;display:block;margin:0 auto 6px}
+.step b{display:block;font-size:15px}
+.step span{font-size:13px;color:var(--muted)}
+.step.ai{background:var(--sun)}
+.step.hum{background:#e3dbff}
+.flow{height:8px;border-radius:8px;background:repeating-linear-gradient(90deg,var(--cyan) 0 14px,transparent 14px 24px);background-size:24px 8px;animation:flow 1s linear infinite;margin:6px 0 0}
+@keyframes flow{to{background-position:24px 0}}
+
+/* slider */
+.ctl{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:4px 0 12px;font-weight:600}
+input[type=range]{accent-color:var(--coral);width:220px}
+.out{font:800 22px var(--display);color:var(--coral)}
+
+/* receipt */
+.receipt-wrap{display:grid;grid-template-columns:1fr;gap:24px;align-items:start}
+.receipt-wrap>.postcard{max-width:640px}
+sup+sup::before{content:",";color:var(--violet);font-size:12px}
+.lab .lrow small{font-size:13.5px}
+.receipt{background:#fff;padding:22px 22px 30px;font:15px/1.5 "Courier New",monospace;box-shadow:0 14px 30px -18px #1a144680;position:relative;transform:rotate(-1.2deg);
+ -webkit-mask:radial-gradient(circle 7px at 50% 100%,transparent 98%,#000) 0 0/18px 100% repeat-x;mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/18px 100%}
+.receipt h4{text-align:center;margin:0 0 4px;font:700 18px "Courier New",monospace;letter-spacing:.1em}
+.receipt .c{text-align:center;color:#666;font-size:13px}
+.ln{display:grid;grid-template-columns:1fr auto;gap:8px;border-bottom:1px dashed #bbb;padding:8px 0}
+.ln small{grid-column:1/-1;color:#555;font-size:13px}
+.ink{display:inline-flex;gap:2px}
+.ink i{width:12px;height:12px;border-radius:50%;background:#ddd}
+.ink i.f{background:var(--coral)}
+.ink.light i.f{background:var(--mint)}
+.ink.mid i.f{background:var(--sun)}
+.tot{display:flex;justify-content:space-between;font-weight:700;font-size:17px;padding-top:12px}
+.stampv{position:absolute;right:16px;bottom:80px;border:3px solid var(--coral);color:var(--coral);font:800 20px var(--display);padding:4px 10px;transform:rotate(-12deg);border-radius:6px;opacity:.9}
+
+/* verdict */
+.verdict{display:grid;grid-template-columns:200px 1fr;gap:26px;background:var(--card);border-radius:18px;padding:24px;align-items:center}
+.tlight{background:var(--ink);border-radius:40px;padding:16px;display:flex;flex-direction:column;gap:14px;align-items:center;width:120px;margin:auto}
+.tlight i{width:70px;height:70px;border-radius:50%;background:#2c2660;transition:.3s}
+.tlight i.r.on{background:var(--coral);box-shadow:0 0 30px var(--coral)}
+.tlight i.y.on{background:var(--sun);box-shadow:0 0 30px var(--sun)}
+.tlight i.g.on{background:var(--mint);box-shadow:0 0 30px var(--mint)}
+.vtext{font:800 clamp(26px,3.4vw,40px)/1.05 var(--display);margin:0 0 14px}
+.conds{display:grid;gap:10px}
+.cond{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;background:var(--bg);border-radius:12px;padding:10px 14px}
+.sw{appearance:none;width:52px;height:30px;border-radius:30px;background:#c9c6e4;position:relative;cursor:pointer;transition:.2s;margin:0}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.2s}
+.sw:checked{background:var(--mint)}
+.sw:checked::after{left:25px}
+.cond b{display:block}
+.cond span{font-size:14px;color:var(--muted)}
+
+/* cases */
+.bubbles{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;justify-content:space-around}
+.bub{text-align:center;max-width:250px}
+.bub .circ{border-radius:50%;margin:0 auto 10px;display:grid;place-items:center;color:#fff;font:800 18px var(--display)}
+.bub b{display:block}
+.bub span{font-size:14px;color:var(--muted)}
+
+.claim{display:grid;gap:10px;margin-top:6px}
+.cbar{display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;font-weight:600;font-size:15px}
+.track{height:34px;background:var(--bg);border-radius:8px;position:relative;overflow:hidden}
+.fill{height:100%;border-radius:8px;display:flex;align-items:center;padding-left:10px;color:#fff;font:800 16px var(--display)}
+.fill.q{background:repeating-linear-gradient(45deg,#c9c6e4 0 8px,#e7e4fb 8px 16px);color:var(--ink);font:700 20px var(--hand);width:100%}
+
+.small{font-size:14px;color:var(--muted)}
+.sources{columns:2;column-gap:30px;font-size:13px;color:var(--muted);padding-left:20px}
+.sources li{break-inside:avoid;margin-bottom:6px}
+.draft{font:700 12px var(--body);background:var(--sun);padding:2px 8px;border-radius:4px}
+footer{background:var(--ink);color:#cfd6ff;padding:24px 0;font-size:14px;margin-top:30px}
+
+
+/* scroll-triggered motion: everything is visible at rest; .go replays it when a card scrolls in */
+.go [data-anim="bar"]{transform-box:fill-box;transform-origin:50% 100%;animation:grow .7s cubic-bezier(.2,.9,.3,1.3) both}
+.go .rip{animation:rip 1s cubic-bezier(.2,.9,.3,1.2) both}
+.go [data-anim="wide"]{transform-box:fill-box;transform-origin:0 50%;animation:wide 1.2s ease-out both}
+.go .icons svg{animation:pop .4s ease-out both}
+.go .bub .circ{animation:pop .7s cubic-bezier(.2,.9,.3,1.4) both}
+.go .step{animation:rise .5s ease-out both}
+@keyframes grow{from{transform:scaleY(0)}}
+@keyframes rip{0%{transform:scaleY(0)}70%{transform:scaleY(1.08)}100%{transform:scaleY(1)}}
+@keyframes wide{from{transform:scaleX(0)}}
+@keyframes pop{from{transform:scale(0);opacity:0}}
+@keyframes rise{from{transform:translateY(24px);opacity:0}}
+.pc-back{transition:transform .3s}
+.postcard:hover .pc-back{transform:rotate(-1deg) translateY(-2px)}
+
+/* lab report */
+.lab{background:#fff;border-radius:6px;padding:20px 22px;box-shadow:0 14px 30px -18px #1a144680;border-top:8px solid var(--cyan);font-size:14px}
+.lab-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:6px}
+.lab-head b{font:800 18px var(--display);letter-spacing:.06em}
+.lab-head span{color:var(--muted);font-size:13px}
+.lab-cols,.lrow{display:grid;grid-template-columns:1.2fr 1fr 92px;gap:14px;align-items:center}
+.lab-cols{font:700 11px var(--body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:6px 0}
+.normkey{display:inline-block;width:18px;height:8px;background:#c8f1e0;border-radius:2px;vertical-align:middle}
+.lrow{border-bottom:1px dashed #cfd5ea;padding:10px 0}
+.lrow b{display:block;font-size:15px}
+.lrow small{color:var(--muted);font-size:12.5px;line-height:1.4;display:block}
+.scale{position:relative;height:16px;background:linear-gradient(90deg,#eef2ff,#ffe1e6);border-radius:8px}
+.scale .norm{position:absolute;left:0;top:0;bottom:0;width:30%;background:#c8f1e0;border-radius:8px 0 0 8px}
+.scale .mark{position:absolute;top:-5px;width:6px;height:26px;margin-left:-3px;border-radius:3px;background:var(--ink)}
+.mark.ok{background:var(--mint)}.mark.mid{background:var(--sun)}.mark.hi{background:var(--coral)}.mark.crit{background:#c4001d}
+.flag{font:800 13px var(--display);text-align:right}
+.flag.ok{color:var(--mint)}.flag.mid{color:#b58200}.flag.hi{color:var(--coral)}.flag.crit{color:#c4001d}
+.lab-foot{display:flex;justify-content:space-between;align-items:end;gap:10px;padding-top:12px;flex-wrap:wrap}
+.sig{font:700 24px var(--hand);color:var(--violet);transform:rotate(-4deg)}
+.go .scale .mark{animation:slide 1s cubic-bezier(.2,.9,.3,1.2) both}
+@keyframes slide{from{left:0}}
+/* x-ray verdict */
+.film{position:relative;max-width:300px;width:100%;margin:auto;border-radius:12px;box-shadow:0 0 0 6px #d9e1f7,0 0 40px #8fa2ff55}
+.film svg{display:block;width:100%;height:auto}
+.lesion{opacity:0;transition:opacity .6s}
+.lesion.show{opacity:1}
+.vstamp{position:absolute;left:50%;bottom:22px;transform:translateX(-50%) rotate(-10deg);font:800 24px var(--display);white-space:nowrap;padding:4px 14px;border:4px solid currentColor;border-radius:8px;letter-spacing:.06em;background:#070a1cd0}
+.vstamp.ok{color:var(--mint)}.vstamp.mid{color:var(--sun)}.vstamp.bad{color:var(--coral)}
+.vstamp.ok,.vstamp.mid,.vstamp.bad{animation:stamp .35s ease-out}
+@keyframes stamp{from{transform:translateX(-50%) rotate(-10deg) scale(1.8);opacity:0}}
+.cn{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--coral);color:#fff;font-size:13px;margin-right:4px}
+.verdict{grid-template-columns:320px 1fr}
+
+@media (max-width:900px){
+ .hero-grid,.row2,.receipt-wrap,.verdict{grid-template-columns:1fr}
+ .postcard{grid-template-columns:1fr}
+ .pc-back{border-left:0;border-top:2px dashed #d8cfa8}
+ .strip{grid-template-columns:1fr 1fr}
+ .pipe{grid-template-columns:1fr 1fr}
+ .sources{columns:1}
+ .bar .hint{display:none}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="sketch"><feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="7"/><feDisplacementMap in="SourceGraphic" scale="3.6"/></filter></svg>
+<nav class="bar" aria-label="Sections">
+ <div class="wrap">
+  <a href="#top">Start</a><a href="#problem">1 Problem</a><a href="#data">2 Data</a><a href="#research">3 Research</a><a href="#solution">4 Solution</a><a href="#bill">The bill</a><a href="#verdict">Verdict</a><a href="#about">AI &amp; sources</a>
+  <span class="hint">press → to move on</span>
+ </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero" id="top">
+ <div class="wrap hero-grid">
+  <div>
+   <div class="kick">PLS519 · An AI answer for Kazakhstan</div>
+   <h1>Reading <em>5.6 million</em> lungs</h1>
+   <p class="lede">Kazakhstan X-rays a quarter of its people every year to hunt for tuberculosis. Should AI read the pictures?</p>
+  </div>
+  <div class="lightbox">
+   <canvas id="hero" width="900" height="560" aria-label="1,400 dots, one of them red"></canvas>
+   <div class="lb-key"><span>each dot = one fluorogram</span><span><b>●</b> = the one with TB</span><span>1 in 1,400 <sup><a href="#s4">4</a></sup></span></div>
+  </div>
+ </div>
+</header>
+
+<main class="wrap">
+
+<!-- 1 PROBLEM -->
+<section id="problem">
+ <div class="sec-head"><span class="num">1</span><h2>A Soviet screening system with too few readers</h2></div>
+ <div class="strip">
+  <div class="chip c1"><b data-count="5624782">5,624,782</b><span>people X-rayed in 2024 <sup><a href="#s4" style="color:#fff">4</a></sup></span></div>
+  <div class="chip c2"><b data-count="4016">4,016</b><span>TB cases found <sup><a href="#s4" style="color:#fff">4</a></sup></span></div>
+  <div class="chip c3"><b data-count="3954">3,954</b><span>doctors short in 2024, all specialties; radiologists among the most needed <sup><a href="#s7" style="color:#fff">7</a></sup><sup><a href="#s29" style="color:#fff">29</a></sup></span></div>
+  <div class="chip c4"><b>1 of 30</b><span>countries with the world's highest MDR-TB burden <sup><a href="#s28" style="color:#fff">28</a></sup></span></div>
+ </div>
+
+ <p class="say">Mass fluorography was introduced in the USSR in the 1940s, and across the region it still runs on Soviet-era mandates <sup><a href="#s30">30</a></sup>. In Kazakhstan, a yearly X-ray is mandatory for listed groups: health, education and food workers, students, the military, people arriving to live or work (including labour migrants), and risk groups such as TB contacts and prisoners <sup><a href="#s31">31</a></sup>.</p>
+ <div class="postcard">
+  <div class="pc-front">
+   <p class="pc-title">Who stands in the X-ray queue</p>
+   <p class="pc-sub">Kazakhstan's 20.2 million people, 2024 (average of 1 Jan 2024 and 1 Jan 2025) <sup><a href="#s5">5</a></sup></p>
+   <div class="chart" id="scale"></div>
+  </div>
+  <div class="pc-back"><span class="stamp">KZ<br>2024</span>
+   <h4>how to read</h4>
+   <p>whole bar = everyone<br><span style="color:var(--cyan)">blue</span> = X-rayed (28%)<br><span style="color:var(--coral)">red sliver</span> = TB found, too thin to see, so I drew a magnifier</p>
+  </div>
+ </div>
+
+ <div class="q">
+  <span class="big">?</span>
+  <div><small>The social-science question</small><p>Kazakhstan already has the X-ray machines and the queues. What it lacks is enough people to read the images, a way to reach those who never get X-rayed, and a public rule for how many missed cases are acceptable. Would AI help the people this system misses, or mainly make an old institution cheaper to run?</p></div>
+ </div>
+</section>
+
+<!-- 2 DATA -->
+<section id="data">
+ <div class="sec-head"><span class="num">2</span><h2>What the numbers show, and what they hide</h2></div>
+ <p class="say">Official statistics count the TB cases the system finds. The WHO estimates how many cases there really are. The gap between the two numbers is people who were never diagnosed or never registered.</p>
+
+ <div class="postcard">
+  <div class="pc-front">
+   <p class="pc-title">The missing people</p>
+   <p class="pc-sub">TB per 100,000 people: registered (2010–2025) vs the WHO estimate of real TB (2023)</p>
+   <div class="chart" id="gap"></div>
+   <p class="src">Registered: Bureau of National Statistics, SDG 3.3.2 <sup><a href="#s1">1</a></sup>. WHO estimate for 2023: 49, uncertainty range 40–59 <sup><a href="#s2">2</a></sup><sup><a href="#s3">3</a></sup>. People never counted = (49 − 34.7) × 20.03M (population on 1 Jan 2024) ÷ 100,000 ≈ 2,900; with the range: ≈ 1,100–4,900 (my calculation, population <sup><a href="#s5">5</a></sup>).</p>
+  </div>
+  <div class="pc-back"><span class="stamp">WHO</span>
+   <h4>how to read</h4>
+   <p><span style="color:var(--cyan)">blue line</span> = TB registered<br><span style="color:var(--coral)">● red dot</span> = WHO's estimate of real TB, 2023<br><span style="color:var(--coral)">whisker</span> = WHO isn't sure: anywhere from 40 to 59<br><span style="color:var(--coral)">hatched gap</span> = people with TB nobody counted<br>→ even the size of the gap is uncertain</p>
+  </div>
+ </div>
+
+ <div class="row2">
+  <div class="postcard">
+   <div class="pc-front">
+    <p class="pc-title">TB moved to the village</p>
+    <p class="pc-sub">Registered TB per 100,000 <sup><a href="#s1">1</a></sup></p>
+    <div class="chart" id="cross"></div>
+   </div>
+   <div class="pc-back"><h4>how to read</h4><p><span style="color:var(--cyan)">city</span> vs <span style="color:var(--coral)">village</span>. The ★ is where they swap places (2022). Villages are also where radiologists are scarcest.</p></div>
+  </div>
+  <div class="postcard">
+   <div class="pc-front">
+    <p class="pc-title">Men carry more of it</p>
+    <p class="pc-sub">Registered TB per 100,000, 2025 <sup><a href="#s1">1</a></sup></p>
+    <div class="people" id="people"></div>
+   </div>
+   <div class="pc-back"><h4>how to read</h4><p>one little person = one TB case per 100,000 people. Men: 37. Women: 24.</p></div>
+  </div>
+ </div>
+
+ <div class="postcard">
+  <div class="pc-front">
+   <p class="pc-title">Can we trust the numbers? The chart that broke</p>
+   <p class="pc-sub">Official open data: registered TB in men, per 100,000, by region, 2019 <sup><a href="#s1">1</a></sup></p>
+   <div class="chart" id="broken"></div>
+  </div>
+  <div class="pc-back"><span class="stamp">!!!</span>
+   <h4>how to read</h4>
+   <p>one bar = one region<br>Mangystau's 1,411 tears through the frame: impossible (the next year it's 47)<br>Akmola dips below zero: impossible<br>ghost bars = regions created in 2022 recorded as "0"<br>→ trust national trends, not 2019 breakdowns</p>
+  </div>
+ </div>
+ <p class="say">What the data doesn't tell us: who the 5.6 million screened people are, and who never gets screened. On paper, even labour migrants must be X-rayed every year <sup><a href="#s31">31</a></sup>, but nobody publishes how many actually are. There are also no public figures on how many cases human readers miss, or how many X-ray machines still use film.</p>
+</section>
+
+<!-- 3 RESEARCH -->
+<section id="research">
+ <div class="sec-head"><span class="num">3</span><h2>Four ways researchers study AI for TB, and the study Kazakhstan hasn't done</h2></div>
+ <div class="postcard">
+  <div class="pc-front">
+   <p class="pc-title">The evidence map</p>
+   <p class="pc-sub">Each bubble is a study, sized by how many people or images it covered</p>
+   <div class="chart" id="map"></div>
+   <p class="src">Bangladesh <sup><a href="#s9">9</a></sup> · 12 AIs <sup><a href="#s10">10</a></sup> · MSF Manila <sup><a href="#s11">11</a></sup> · South Africa <sup><a href="#s12">12</a></sup> · Kenya <sup><a href="#s13">13</a></sup> · Pakistan <sup><a href="#s16">16</a></sup> · Glasgow <sup><a href="#s15">15</a></sup> · Belarus <sup><a href="#s30">30</a></sup> · WHO 1974 <sup><a href="#s14">14</a></sup></p>
+  </div>
+  <div class="pc-back"><span class="stamp">n=</span>
+   <h4>how to read</h4>
+   <p>columns = the question asked<br>bubble size = people/images<br><span style="color:var(--mint)">green</span> = AI works<br><span style="color:var(--coral)">red</span> = AI fails for some<br><span style="color:var(--sun)">yellow</span> = it depends<br>dashed = what nobody has published: Kazakhstan</p>
+  </div>
+ </div>
+ <div class="strip">
+  <div class="chip c4"><b>Known</b><span>The best AI reads TB on X-rays as well as or better than doctors <sup><a href="#s9" style="color:#fff">9</a></sup><sup><a href="#s10" style="color:#fff">10</a></sup>. WHO has allowed it since 2021 <sup><a href="#s8" style="color:#fff">8</a></sup>.</span></div>
+  <div class="chip" style="background:var(--sun);color:var(--ink)"><b>Contested</b><span>Is mass screening worth it? WHO said stop in 1974 <sup><a href="#s14">14</a></sup>; Glasgow 1957 says one big round helped <sup><a href="#s15">15</a></sup>.</span></div>
+  <div class="chip c3"><b>Region</b><span>In Belarus, fluorography continues USSR mandates and costs about $11M a year; the World Bank and WHO urge targeted screening instead <sup><a href="#s30" style="color:#fff">30</a></sup>.</span></div>
+  <div class="chip c2"><b>Gap</b><span>No published independent validation of AI on Kazakhstan's own fluorograms: older people, many ex-TB patients, high drug resistance <sup><a href="#s6" style="color:#fff">6</a></sup><sup><a href="#s28" style="color:#fff">28</a></sup>.</span></div>
+ </div>
+</section>
+
+<!-- 4 SOLUTION -->
+<section id="solution">
+ <div class="sec-head"><span class="num">4</span><h2>The idea: AI reads first, a doctor always reads too</h2></div>
+ <div class="postcard">
+  <div class="pc-front">
+   <p class="pc-title">How a fluorogram would travel</p>
+   <div class="pipe">
+    <div class="step"><svg class="ic" viewBox="0 0 64 64" role="img" aria-label="X-ray of lungs"><g fill="none" stroke="#1a1446" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#sketch)"><rect x="8" y="6" width="48" height="52" rx="6"/><path d="M32 12v34"/><path d="M30 18c-9 2-14 12-14 24 0 6 3 8 7 7 6-2 8-9 7-20"/><path d="M34 18c9 2 14 12 14 24 0 6-3 8-7 7-6-2-8-9-7-20"/><path d="M22 30h-4M22 38h-5M42 30h4M42 38h5"/><circle cx="41" cy="33" r="2.5" fill="#ff3d5a" stroke="#ff3d5a"/></g></svg><b>X-ray</b><span>at a polyclinic, or in a mobile van</span></div>
+    <div class="step ai"><svg class="ic" viewBox="0 0 64 64" role="img" aria-label="AI chip"><g fill="none" stroke="#1a1446" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#sketch)"><rect x="16" y="16" width="32" height="32" rx="5"/><path d="M24 8v8M32 8v8M40 8v8M24 48v8M32 48v8M40 48v8M8 24h8M8 32h8M8 40h8M48 24h8M48 32h8M48 40h8"/><path d="M25 40l5-16 5 16M27 34h6M40 24v16"/></g></svg><b>Score 0–100</b><span>in minutes, WHO-evaluated software <sup><a href="#s8">8</a></sup></span></div>
+    <div class="step hum"><svg class="ic" viewBox="0 0 64 64" role="img" aria-label="priority queue"><g fill="none" stroke="#1a1446" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#sketch)"><path d="M10 50h10M10 40h18M10 30h26"/><path d="M48 52V12"/><path d="M38 22l10-10 10 10"/><circle cx="48" cy="12" r="0.5"/></g></svg><b>High score jumps the queue</b><span>doctor reads it today</span></div>
+    <div class="step hum"><svg class="ic" viewBox="0 0 64 64" role="img" aria-label="doctor reads"><g fill="none" stroke="#1a1446" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#sketch)"><path d="M6 32c8-12 17-18 26-18s18 6 26 18c-8 12-17 18-26 18S14 44 6 32z"/><circle cx="32" cy="32" r="9"/><circle cx="32" cy="32" r="3" fill="#1a1446"/><path d="M14 14l4 5M50 14l-4 5M32 6v6"/></g></svg><b>Low score still read</b><span>human second check</span></div>
+    <div class="step"><svg class="ic" viewBox="0 0 64 64" role="img" aria-label="lab test"><g fill="none" stroke="#1a1446" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#sketch)"><path d="M24 6h16M27 6v38a5 5 0 0 0 10 0V6"/><path d="M27 30h10"/><path d="M28 36c2 1 6 1 8 0"/><circle cx="31" cy="40" r="1.5" fill="#00b884" stroke="#00b884"/><path d="M44 16l8-4M46 24h8M44 32l8 4"/></g></svg><b>Lab test</b><span>confirms TB</span></div>
+   </div>
+   <div class="flow" aria-hidden="true"></div>
+   <p class="src">Run by the National TB Center under the Ministry of Health; servers inside Kazakhstan as the personal data law requires <sup><a href="#s26">26</a></sup>. Two ways in: the existing X-ray rooms, plus mobile X-ray units with AI that go to villages, building sites and migrant hostels, the set-up used in the Stop TB project below <sup><a href="#s17">17</a></sup>. Rural districts with vacancies go first.</p>
+  </div>
+  <div class="pc-back"><h4>how to read</h4><p><span style="background:var(--sun)">yellow</span> = machine<br><span style="background:#e3dbff">lilac</span> = human<br>the AI only changes the <u>order</u> of the queue. It never closes a case on its own.</p></div>
+ </div>
+
+ <div class="q">
+  <span class="big">!</span>
+  <div><small>My position on mass screening</small><p>X-raying more than a quarter of the country every year finds one case per 1,400 images. I would keep chest X-ray but stop treating it as a yearly ritual for everyone: shift effort to the risk groups already named in Kazakhstan's own rules and to people who never come in <sup><a href="#s31">31</a></sup>, as the World Bank and WHO recommend for Belarus <sup><a href="#s30">30</a></sup>. AI makes this affordable because a mobile unit no longer needs a radiologist on board.</p></div>
+ </div>
+ <div class="postcard">
+  <div class="pc-front">
+   <p class="pc-title">It has worked elsewhere</p>
+   <p class="pc-sub">Circle area = people screened or enrolled</p>
+   <div class="bubbles" id="cases"></div>
+  </div>
+  <div class="pc-back"><h4>how to read</h4><p>bigger circle = more people<br>number inside = people with TB (or nodules) found<br>set-ups differ: portable X-ray vans, city outreach, a hospital trial</p></div>
+ </div>
+
+ <div class="postcard">
+  <div class="pc-front">
+   <p class="pc-title">A local warning: claims vs evidence</p>
+   <p class="pc-sub">Cortex AI, an Astana startup reading chest X-rays for lung cancer <sup><a href="#s20">20</a></sup></p>
+   <div class="claim">
+    <div class="cbar"><span>Accuracy claimed</span><div class="track"><div class="fill" style="width:94.1%;background:var(--violet)">94.1%</div></div></div>
+    <div class="cbar"><span>Independently tested on Kazakh patients</span><div class="track"><div class="fill q">? ? ? no published test</div></div></div>
+   </div>
+   <p class="src">The pitch deck lists an open-source software licence (Apache 2.0) as a "certification". Meanwhile a state-approved domestic AI for lung CT has sat unused for about three years, waiting on a tariff decision <sup><a href="#s21">21</a></sup>. So one product is sold on a claim nobody has checked, and another, approved by a state council, is stuck waiting for a tariff.</p>
+  </div>
+  <div class="pc-back"><span class="stamp">KZ</span><h4>how to read</h4><p>purple = what the startup says<br>striped = what we actually know<br>→ buy only what passes a test on our own images</p></div>
+ </div>
+
+ <div class="postcard">
+  <div class="pc-front">
+   <p class="pc-title">The trade-off, live</p>
+   <p class="pc-sub">2024's 5.6 million X-rays <sup><a href="#s4">4</a></sup>, AI tuned to catch 90% of TB. Move the slider: five products in a 7-country study ranged 65–74% specificity (preprint figures; published 2026) <sup><a href="#s19">19</a></sup>.</p>
+   <div class="ctl"><label for="spec">AI specificity</label><input type="range" id="spec" min="60" max="80" value="70"><span class="out" id="specout">70%</span></div>
+   <div class="chart" id="trade"></div>
+  </div>
+  <div class="pc-back"><span class="stamp">90%</span><h4>how to read</h4><p>big <span style="color:var(--cyan)">blue</span> block = X-rays doctors no longer need to rush<br><span style="color:var(--sun)">yellow</span> = flagged for today<br><span style="color:var(--coral)">red dots</span> = TB cases the AI would wave through (~400) if no human looked</p></div>
+ </div>
+</section>
+
+<!-- BILL -->
+<section id="bill">
+ <div class="sec-head"><span class="num" style="color:var(--coral)">$</span><h2>The bill: what it would really cost</h2></div>
+ <div class="receipt-wrap">
+  <div class="lab">
+   <div class="lab-head"><b>LAB REPORT</b><span>Patient: AI fluorography, Kazakhstan · sample: 5.6M scans/yr</span></div>
+   <div class="lab-cols"><span>Test</span><span>Level <i class="normkey"></i> = acceptable</span><span>Flag</span></div>
+   <div class="lrow"><div><b>Environment</b><small>compute ≈ 47–470 kWh/yr (my estimate: 0.1 s on a 300 W GPU per image) on a grid that is ~75% coal <sup><a href="#s22">22</a></sup>. Water use follows electricity and cooling <sup><a href="#s37">37</a></sup>, so it is small for the AI itself. Storing ~56 TB of new images a year (my estimate, ~10 MB each) plus backups will use more power and water than the AI; not measured.</small></div><div class="scale" role="img" aria-label="Environment: normal"><span class="norm"></span><span class="mark ok" style="left:12%"></span></div><span class="flag ok">normal</span></div>
+   <div class="lrow"><div><b>Money</b><small>licences ≈ $1.25M/yr if 500 machines × $2,500, with installation, training and updates included; Kazakhstan is eligible <sup><a href="#s23">23</a></sup>. "500 machines" is my assumption. Not priced: digitising film machines, servers in Kazakhstan, a local validation study, the audit. The money goes to Delft Imaging in the Netherlands <sup><a href="#s35">35</a></sup>, while a Kazakh CT AI waits for a tariff <sup><a href="#s21">21</a></sup>.</small></div><div class="scale" role="img" aria-label="Money: borderline"><span class="norm"></span><span class="mark mid" style="left:50%"></span></div><span class="flag mid">↑ borderline</span></div>
+   <div class="lrow"><div><b>Labour</b><small>radiologists, already in short supply <sup><a href="#s29">29</a></sup>, become auditors of AI scores; junior doctors read fewer normal images and lose practice; the models rest on hidden data work such as image labelling and verification <sup><a href="#s36">36</a></sup>; doctors may over-trust the score.</small></div><div class="scale" role="img" aria-label="Labour: high"><span class="norm"></span><span class="mark hi" style="left:72%"></span></div><span class="flag hi">↑ high</span></div>
+   <div class="lrow"><div><b>Power &amp; law</b><small>under Law 230-VIII the owner classifies the system; a medical AI would likely be high-risk, with an audit to enter the "trusted" list <sup><a href="#s24">24</a></sup><sup><a href="#s25">25</a></sup> (rules in force since 26 Apr 2026: sectoral bodies, here the Ministry of Health, publish lists of trusted high-risk AI; the owner applies with a positive audit conclusion <sup><a href="#s38">38</a></sup><sup><a href="#s32">32</a></sup>). The EU AI Act treats AI in medical devices as high-risk and requires human oversight <sup><a href="#s33">33</a></sup>; UNESCO's 2021 Recommendation keeps ultimate responsibility with humans <sup><a href="#s34">34</a></sup>. Data must stay in KZ <sup><a href="#s26">26</a></sup>. A national lung register could be misused to exclude people.</small></div><div class="scale" role="img" aria-label="Power and law: high"><span class="norm"></span><span class="mark hi" style="left:76%"></span></div><span class="flag hi">↑ high</span></div>
+   <div class="lrow"><div><b>Data ethics</b><small>the yearly X-ray is mandatory for many groups <sup><a href="#s31">31</a></sup>, but nobody agreed to train an AI with it; medical data is sensitive and needs explicit consent <sup><a href="#s27">27</a></sup>; accuracy is lower for older and ex-TB patients <sup><a href="#s12">12</a></sup><sup><a href="#s13">13</a></sup><sup><a href="#s19">19</a></sup>.</small></div><div class="scale" role="img" aria-label="Data ethics: critical"><span class="norm"></span><span class="mark crit" style="left:92%"></span></div><span class="flag crit">↑↑ critical</span></div>
+   <div class="lab-foot"><span>Conclusion: <b>energy use is negligible; the real costs are labour, law and consent.</b></span><span class="sig">reviewed with care</span></div>
+  </div>
+  <div class="postcard" style="margin:0;grid-template-columns:1fr">
+   <div class="pc-front">
+    <p class="pc-title">The energy myth, to scale</p>
+    <p class="pc-sub">AI compute for all 5.6M X-rays vs Kazakhstan's total electricity, 2024 <sup><a href="#s22">22</a></sup></p>
+    <div class="chart" id="energy"></div>
+   </div>
+   <div class="pc-back" style="border-left:0;border-top:2px dashed #d8cfa8"><h4>how to read</h4><p>the grey square = all electricity Kazakhstan made (117.9 billion kWh)<br>the <span style="color:var(--coral)">red speck</span> you can't see = this project (≤470 kWh)<br>→ the real costs are the red flags on the lab report</p></div>
+  </div>
+ </div>
+</section>
+
+<!-- VERDICT -->
+<section id="verdict">
+ <div class="sec-head"><span class="num" style="color:var(--mint)">✓</span><h2>Should Kazakhstan do this?</h2></div>
+ <div class="verdict">
+  <div class="film" aria-hidden="true">
+   <svg viewBox="0 0 300 360">
+    <defs>
+     <filter id="blurL"><feGaussianBlur stdDeviation="7"/></filter>
+     <radialGradient id="lungG" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="#2a3566"/><stop offset="1" stop-color="#0b0f26"/></radialGradient>
+    </defs>
+    <rect width="300" height="360" rx="10" fill="#070a1c"/>
+    <g fill="none" stroke="#8fa2ff" stroke-width="2.2" stroke-linecap="round" filter="url(#sketch)" opacity=".85">
+     <path d="M150 40v280"/>
+     <path d="M140 70C95 74 58 120 52 200c-5 60 8 100 40 110 30 9 48-12 50-60V82" fill="url(#lungG)"/>
+     <path d="M160 70c45 4 82 50 88 130 5 60-8 100-40 110-30 9-48-12-50-60V82" fill="url(#lungG)"/>
+     <path d="M70 120q-30 10-44 34M66 160q-34 10-46 36M64 200q-34 10-44 36M70 240q-30 10-40 34"/>
+     <path d="M230 120q30 10 44 34M234 160q34 10 46 36M236 200q34 10 44 36M230 240q30 10 40 34"/>
+     <path d="M118 46q-30-8-70 6M182 46q30-8 70 6"/>
+    </g>
+    <ellipse cx="166" cy="250" rx="34" ry="44" fill="#8fa2ff" opacity=".18" filter="url(#blurL)"/>
+    <g class="lesion" id="les1"><circle cx="92" cy="150" r="17" fill="#e9edff" filter="url(#blurL)"/><circle cx="92" cy="150" r="26" fill="none" stroke="#ff3d5a" stroke-width="3" stroke-dasharray="5 4"/><text x="122" y="132" class="hand" fill="#ff3d5a" style="fill:#ff3d5a">1</text></g>
+    <g class="lesion" id="les2"><circle cx="212" cy="140" r="14" fill="#e9edff" filter="url(#blurL)"/><circle cx="212" cy="140" r="23" fill="none" stroke="#ff3d5a" stroke-width="3" stroke-dasharray="5 4"/><text x="238" y="124" class="hand" fill="#ff3d5a" style="fill:#ff3d5a">2</text></g>
+    <g class="lesion" id="les3"><circle cx="86" cy="250" r="15" fill="#e9edff" filter="url(#blurL)"/><circle cx="86" cy="250" r="24" fill="none" stroke="#ff3d5a" stroke-width="3" stroke-dasharray="5 4"/><text x="58" y="290" class="hand" fill="#ff3d5a" style="fill:#ff3d5a">3</text></g>
+    <g class="lesion" id="les4"><circle cx="218" cy="236" r="18" fill="#e9edff" filter="url(#blurL)"/><circle cx="218" cy="236" r="27" fill="none" stroke="#ff3d5a" stroke-width="3" stroke-dasharray="5 4"/><text x="246" y="280" class="hand" fill="#ff3d5a" style="fill:#ff3d5a">4</text></g>
+    <text x="16" y="28" fill="#8fa2ff" style="fill:#8fa2ff" font-size="12" font-family="DM Sans">KZ · PA view · verdict</text>
+    <text x="284" y="346" fill="#8fa2ff" style="fill:#8fa2ff" font-size="12" text-anchor="end" font-family="DM Sans">R ▸</text>
+   </svg>
+   <div class="vstamp" id="vstamp">CLEAR</div>
+  </div>
+  <div>
+   <p class="vtext" id="vtext">Yes: as a second reader, in targeted screening.</p>
+   <p class="small" style="margin:-6px 0 12px">Switch a condition off: a shadow appears on the film, and the diagnosis changes.</p>
+   <div class="conds">
+    <label class="cond"><input type="checkbox" class="sw" checked><div><b><span class="cn">1</span> Tested on our own lungs first</b><span>against lab-confirmed TB, reported for 60+, ex-TB, rural</span></div></label>
+    <label class="cond"><input type="checkbox" class="sw" checked><div><b><span class="cn">2</span> A doctor signs every result</b><span>AI reorders the queue, never closes a case</span></div></label>
+    <label class="cond"><input type="checkbox" class="sw" checked><div><b><span class="cn">3</span> Data stays home and stays limited</b><span>servers in KZ, no vendor reuse, public audit under Law 230-VIII</span></div></label>
+    <label class="cond"><input type="checkbox" class="sw" checked><div><b><span class="cn">4</span> Go to people who never come in</b><span>mobile X-ray + AI for villages and migrant workplaces; success = more cases found there</span></div></label>
+   </div>
+  </div>
+ </div>
+</section>
+
+<!-- ABOUT -->
+<section id="about">
+ <div class="sec-head"><span class="num" style="color:var(--violet)">AI</span><h2>How this was made</h2></div>
+ <div class="say">
+ <p>Made together with Claude (Anthropic). Claude suggested possible topics; I chose and narrowed the focus to AI reading lung X-rays and brought my own material, including an article and a PDF pitch deck about the Kazakh startup Cortex AI. Claude helped with research, calculations and coding the page. We shaped the design together.</p>
+ <p><b>What I rejected.</b> Claude first recommended air pollution in Almaty as the safest topic; I chose lung X-rays instead. Claude's first version of the site was long, text-heavy and full of tables; I rejected it and asked for a visual, Dear Data-style page with less text. I also rejected the traffic-light verdict and the receipt, because they looked like other projects; we replaced them with an X-ray film and a lab report.</p>
+ <p><b>What I accepted.</b> Treating Cortex AI as a case study rather than a source of facts, and a full source check that removed several WHO figures I could not confirm.</p>
+ <p>I did not use Cortex AI's 94.1% claim as fact, because it has no published validation. Every number links to a source below, and assumptions are labelled.</p>
+</div>
+ <ol class="sources">
+ <li id="s1">Bureau of National Statistics of Kazakhstan. SDG indicator 3.3.2, TB incidence per 100,000 (by urban/rural, sex, region). <a href="https://sdgdata.stat.gov.kz/en/3-3-2/">sdgdata.stat.gov.kz</a>. Data file: <a href="https://github.com/kazstat/sdg-data-kazstat">github.com/kazstat/sdg-data-kazstat</a> (develop branch, data/indicator_3-3-2.csv). Accessed 16 Nov 2026.</li>
+ <li id="s2">WHO Data. Kazakhstan country page: tuberculosis incidence 2023 = 49 per 100,000 (uncertainty 40–59). Values load in the browser. <a href="https://data.who.int/countries/398">data.who.int</a>.</li>
+ <li id="s3">Denebayeva A.Y. et al. Prevalence and associated factors of TB/HIV coinfection among people living with HIV in Almaty. Frontiers in Public Health 14 (2026); cites WHO TB country profile: incidence 49 per 100,000. doi:10.3389/fpubh.2026.1816007. <a href="https://www.frontiersin.org/journals/public-health/articles/10.3389/fpubh.2026.1816007/full">frontiersin.org</a>.</li>
+ <li id="s4">24KZ, citing the Ministry of Health. "Свыше 4 тысяч случаев туберкулёза выявлено в Казахстане," 26 Mar 2025 (5,624,782 screened; 4,016 cases). <a href="https://24.kz/ru/news/zdravookhranenie/701334-svyshe-4-tysyach-sluchaev-tuberkuljoza-vyyavleno-v-kazakhstane">24.kz</a>.</li>
+ <li id="s5">NewTimes.kz, citing the Bureau of National Statistics. Population on 1 Jan 2025: 20,286,084; growth in 2024: 252,242. 3 Feb 2025. <a href="https://newtimes.kz/obshchestvo/201545-kakova-chislennost-naseleniia-k-nachalu-2025-goda-statistika">newtimes.kz</a>.</li>
+ <li id="s6">Takenov N. et al. Genetic diversity, drug resistance, and transmission patterns of tuberculosis based on whole-genome sequencing in Almaty, Kazakhstan. Frontiers in Microbiology (2025): 26% of new TB cases are MDR. <a href="https://www.frontiersin.org/journals/microbiology/articles/10.3389/fmicb.2025.1649137/abstract">frontiersin.org</a>.</li>
+ <li id="s7">Zakon.kz. "Каких врачей не хватает в Казахстане," 8 Oct 2025 (deputy D. Turlykhanov: shortage of 3,954 doctors at end of 2024). <a href="https://www.zakon.kz/obshestvo/6493566-kakikh-vrachey-ne-khvataet-v-kazakhstane--deputat-bet-trevogu.html">zakon.kz</a>.</li>
+ <li id="s8">WHO. Use of computer-aided detection software for tuberculosis screening: WHO policy statement (2025). CAD recommended since 2021 for people aged 15+. <a href="https://www.who.int/publications/i/item/9789240110373">who.int</a>.</li>
+ <li id="s9">Qin Z.Z. et al. Tuberculosis detection from chest x-rays for triaging in a high tuberculosis-burden setting: an evaluation of five AI algorithms. Lancet Digital Health 3(9):e543–e554 (2021). Summary: <a href="https://www.auntminnie.com/clinical-news/article/15629136/ai-could-help-diagnose-tb-in-developing-countries">AuntMinnie</a>. Preprint: <a href="https://arxiv.org/abs/2006.05509v3">arXiv:2006.05509</a>.</li>
+ <li id="s10">Qin Z.Z. et al. Comparing the accuracy of CAD software and radiologists from multiple countries for tuberculosis detection in chest X-rays. Scientific Reports (2025). <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC12215708/">PMC12215708</a>.</li>
+ <li id="s11">Carnimeo V. et al. Computer-aided detection pragmatic threshold calibration in TB active case finding: a mixed-methods study in Tondo, Manila. PLOS Global Public Health 6(8):e0006908 (2026). <a href="https://scienceportal.msf.org/api/assets/9758/download/16135">PDF</a>.</li>
+ <li id="s12">Nzimande N. et al. Performance of CAD4TB AI technology in TB screening programmes among the adult population in South Africa and Lesotho. J Clin Tuberc Other Mycobact Dis 40:100540 (2025). <a href="https://research.itg.be/en/publications/performance-of-cad4tb-artificial-intelligence-technology-in-tb-sc/">ITG</a>.</li>
+ <li id="s13">Mungai B. et al. Accuracy of computer-aided chest X-ray in community-based TB screening: lessons from the 2016 Kenya National TB Prevalence Survey. PLOS Global Public Health 2(11):e0001272 (2022). <a href="https://archive.lstmed.ac.uk/21633/1/journal.pgph.0001272.pdf">PDF</a>.</li>
+ <li id="s14">WHO. Systematic screening for active tuberculosis: principles and recommendations (2013), quoting the 9th report of the WHO Expert Committee on Tuberculosis (1974). <a href="https://www.challengetb.org/publications/tools/hss/Systematic_Screening_for_Active_Tuberculosis.pdf">PDF</a>.</li>
+ <li id="s15">MacPherson P. et al. Impact of active case finding for tuberculosis with mass chest X-ray screening in Glasgow, Scotland, 1950–1963. PLoS Medicine 21(11):e1004448 (2024). <a href="https://eprints.gla.ac.uk/337713">eprints.gla.ac.uk</a>.</li>
+ <li id="s16">Bashir S. et al. Economic analysis of different throughput scenarios and implementation strategies of CAD software as a screening and triage test for pulmonary TB. PLoS ONE 17(12):e0277393 (2022). <a href="https://doaj.org/article/38ebbe98cd2a4582a70bade8806d4f19">DOAJ</a>.</li>
+ <li id="s17">Stop TB Partnership. iNTP Results: ultra-portable X-ray and computer-aided detection (Oct 2024; Q4 2021–Q3 2023, 7 countries). <a href="https://www.stoptb.org/sites/default/files/documents/x-ray_and_cad_results_report.pdf">PDF</a>.</li>
+ <li id="s18">Nam J.G. et al. AI improves nodule detection on chest radiographs in a health screening population: a randomized controlled trial. Radiology (Feb 2023). Summary: <a href="https://www.auntminnie.com/clinical-news/digital-x-ray/article/15632809/ai-based-cad-algorithm-shows-value-in-real-world-setting">AuntMinnie</a>.</li>
+  <li id="s19">Worodria W. et al. A multi-country head-to-head accuracy comparison of automated chest X-ray algorithms for tuberculosis. Annals of the American Thoracic Society 23(5):728–736 (2026), <a href="https://greenprints.dlshsi.edu.ph/faculty_scholarly_works/566">record</a>. Specificity range on this page is from the 2024 preprint: <a href="https://medrxiv.org/content/10.1101/2024.06.19.24309061v1.full.pdf">medRxiv</a>.</li>
+ <li id="s20">DigitalBusiness.kz. "Парень из Казахстана в 17 лет запустил стартап и хочет победить рак," 10 Feb 2025. <a href="https://digitalbusiness.kz/2025-02-10/paren-iz-kazahstana-v-17-let-zapustil-startap-i-hochet-pobedit-rak-vot-ego-istoriya/">digitalbusiness.kz</a>. Cortex AI pitch deck (2025), shared by the author.</li>
+ <li id="s21">Azattyq Ruhy. «Танцующие роботы вместо реальных разработок»: мажилисмен раскритиковал подход к внедрению ИИ, 28 May 2026. <a href="https://rus.azattyq-ruhy.kz/society/109216-tantsuiushchie-roboty-vmesto-realnykh-razrabotok-mazhilismen-raskritikoval-podkhod-k-vnedreniiu-ii-v-kazakhstane/amp">azattyq-ruhy.kz</a>.</li>
+ <li id="s22">Samruk-Energy. Overview of the electricity and coal market in Kazakhstan, Annual Report 2024 (117.9 bn kWh; coal TPPs 74.9%). <a href="https://ar2024.samruk-energy.kz/en/kazakhstan-power-and-coal-markets.html">samruk-energy.kz</a>.</li>
+ <li id="s23">Clinton Health Access Initiative. CAD Agreements FAQ (2026): CAD4TB $2,500 per connected X-ray unit per year; Kazakhstan listed as eligible. <a href="https://www.clintonhealthaccess.org/wp-content/uploads/2026/09/CAD-Agreements_FAQ-Document.pdf">PDF</a>.</li>
+ <li id="s24">Law of the Republic of Kazakhstan No. 230-VIII "On Artificial Intelligence" (17 Nov 2025), official text: <a href="https://adilet.zan.kz/eng/docs/Z2500000230">adilet.zan.kz</a>. Summary used: EY Kazakhstan tax alert, Dec 2025. <a href="https://www.ey.com/en_kz/technical/tax-alerts/2025/12/law-on-artificial-intelligence-kazakhstan">ey.com</a>.</li>
+ <li id="s25">JD Supra. Global regulatory tracker: Kazakhstan (owner oversight duties, autonomy levels). <a href="https://www.jdsupra.com/legalnews/global-regulatory-tracker-kazakhstan-6847837/">jdsupra.com</a>.</li>
+ <li id="s26">GSE. Personal data storage in Kazakhstan: Article 12, Law "On Personal Data and Their Protection". <a href="https://www.gse.kz/en/blog/personal-data-storage-kazakhstan">gse.kz</a>.</li>
+ <li id="s27">VLO Law Firm. Kazakhstan data protection, 2026 Q2 (medical data = sensitive personal data). <a href="https://vlolawfirm.com/legal-updates/kazakhstan-2026-q2-data-protection">vlolawfirm.com</a>.</li>
+  <li id="s28">WHO Regional Office for Europe. Tuberculosis in the WHO European Region, fact sheet, 19 Mar 2025 (Kazakhstan among the 30 highest MDR-TB burden countries). <a href="https://www.who.int/europe/news-room/fact-sheets/item/tuberculosis">who.int</a>.</li>
+ <li id="s29">24KZ. "В каких регионах Казахстана наибольший дефицит медиков," 14 Jan 2026 (Ministry of Health: radiology doctors among the specialties in shortest supply). <a href="https://24.kz/ru/news/zdravookhranenie/749293-v-kakikh-regionakh-kazakhstana-naibolshij-defitsit-medikov">24.kz</a>.</li>
+ <li id="s30">Smelov V. et al. Rationale and purpose: the FLUTE study to evaluate fluorography mass screening for tuberculosis and other diseases, as conducted in Eastern Europe and Central Asia countries. Int J Environ Res Public Health 19(14):8706 (2022). A study-design paper: cited here only for context (Soviet origin, cost, World Bank/WHO position), not for results. <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9320702">PMC9320702</a>.</li>
+ <li id="s31">Ministry of Health of Kazakhstan. Order ҚР ДСМ-214/2020, Rules for TB prevention, clauses 80–81 (groups required to have fluorography). <a href="https://zakon.uchet.kz/rus/docs/V2000021695">zakon.uchet.kz</a>.</li>
+ <li id="s32">Morrison Foerster. AI law tracker: Kazakhstan (gives the order on trusted high-risk AI lists as No. 196/NҚ, 10 Apr 2026; number not confirmed in a primary source). Law text: <a href="https://adilet.zan.kz/eng/docs/Z2500000230">adilet.zan.kz</a>. <a href="https://www.mofo.com/artificial-intelligence/kazakhstan">mofo.com</a>.</li>
+ <li id="s33">Hunton Andrews Kurth. The impact of the EU AI Act on the development and use of medical devices, 27 Nov 2024. <a href="https://www.hunton.com/insights/legal/the-impact-of-the-eu-ai-act-on-the-development-and-use-of-medical-devices">hunton.com</a>.</li>
+ <li id="s34">UNESCO. Recommendation on the Ethics of Artificial Intelligence (2021), summary. <a href="https://regulations.ai/regulations/RAI-XU-GO-UREAIXX-2021">regulations.ai</a>.</li>
+ <li id="s35">Stop TB Partnership. Partner profile: Delft Imaging, 's-Hertogenbosch, Netherlands (maker of CAD4TB). <a href="https://stoptb.org/partners/partner_profile2.asp?PID=108592">stoptb.org</a>.</li>
+ <li id="s36">Tubaro P., Casilli A.A., Coville M. The trainer, the verifier, the imitator: three ways in which human platform workers support artificial intelligence. Big Data &amp; Society 7(1) (2020). PLS519 Week 10 reading. <a href="https://doi.org/10.1177/2053951720919776">doi</a>.</li>
+ <li id="s37">Li P., Yang J., Islam M.A., Ren S. Making AI less "thirsty": uncovering and addressing the secret water footprint of AI models. arXiv:2304.03271 (2023). PLS519 Week 9 reading. <a href="https://arxiv.org/abs/2304.03271">arXiv</a>.</li>
+ <li id="s38">Zakon.kz. "В Казахстане сформируют перечни доверенных систем ИИ," 16 Apr 2026 (rules for sectoral lists of trusted high-risk AI systems; in force 26 Apr 2026; positive audit conclusion required). <a href="https://www.zakon.kz/pravo/6514750-v-kazakhstane-sformiruyut-perechni-doverennykh-sistem-ii.html">zakon.kz</a>.</li>
+</ol>
+</section>
+</main>
+
+<footer><div class="wrap">PLS519 · AI from a Social Science Perspective · Nazarbayev University · Fall 2026 · built with Claude (Anthropic)</div></footer>
+
+<script>
+(function(){
+const C=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const NS="http://www.w3.org/2000/svg";
+function el(t,a,p,txt){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(t==="text"&&a.fill)e.style.fill=a.fill;if(txt!=null)e.textContent=txt;if(p)p.appendChild(e);return e;}
+function svg(id,W,H){const b=document.getElementById(id);b.innerHTML="";const s=el("svg",{viewBox:`0 0 ${W} ${H}`},b);
+ const d=el("defs",{},s);
+ const f=el("filter",{id:id+"w"},d);el("feTurbulence",{type:"fractalNoise",baseFrequency:"0.03",numOctaves:"2",seed:"3"},f);el("feDisplacementMap",{in:"SourceGraphic",scale:"2.2"},f);
+ const p=el("pattern",{id:id+"h",width:"8",height:"8",patternUnits:"userSpaceOnUse",patternTransform:"rotate(45)"},d);el("rect",{width:"3",height:"8",fill:C("--coral"),opacity:".55"},p);
+ return s;}
+const fmt=n=>Math.round(n).toLocaleString("en-US");
+
+/* HERO: 1,400 dots */
+(function(){
+ const cv=document.getElementById("hero"),x=cv.getContext("2d");const cols=50,rows=28,W=cv.width,H=cv.height;
+ const gx=W/cols,gy=H/rows;const target=Math.floor(Math.random()*1400);let t=0;
+ const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+ function frame(){x.clearRect(0,0,W,H);
+  for(let i=0;i<1400;i++){const c=i%cols,r=Math.floor(i/cols),cx=c*gx+gx/2,cy=r*gy+gy/2;
+   if(i===target){const pr=reduce?1:(1+0.35*Math.sin(t/12));x.fillStyle="#ff3d5a33";x.beginPath();x.arc(cx,cy,gy*0.9*pr,0,7);x.fill();x.fillStyle="#ff3d5a";x.beginPath();x.arc(cx,cy,gy*0.36,0,7);x.fill();}
+   else{x.fillStyle="#8fa2ff"+(i%7===0?"99":"55");x.beginPath();x.ellipse(cx-2.2,cy,2.4,3.6,0,0,7);x.ellipse(cx+2.2,cy,2.4,3.6,0,0,7);x.fill();}}
+  t++;if(!reduce)requestAnimationFrame(frame);}
+ frame();
+})();
+
+/* count-up */
+document.querySelectorAll("[data-count]").forEach(b=>{const n=+b.dataset.count;let s=null;
+ if(matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+ const io=new IntersectionObserver(e=>{if(!e[0].isIntersecting)return;io.disconnect();
+  const step=ts=>{if(!s)s=ts;const k=Math.min(1,(ts-s)/1200);b.textContent=fmt(n*(1-Math.pow(1-k,3)));if(k<1)requestAnimationFrame(step);};requestAnimationFrame(step);});
+ io.observe(b);});
+
+/* SCALE bar */
+(function(){const s=svg("scale",820,170);const L=20,R=800,w=R-L;
+ el("rect",{x:L,y:40,width:w,height:56,rx:10,fill:"#e4e9fb"},s);
+ const sw=w*5624782/20159963;el("rect",{x:L,y:40,width:sw,height:56,rx:10,fill:C("--cyan"),filter:"url(#scalew)","data-anim":"wide"},s);
+ el("text",{x:L+10,y:74,fill:"#fff","font-weight":"700","font-size":"16"},s,"5.6M X-rayed (28%)");
+ el("text",{x:R-10,y:74,"text-anchor":"end","font-size":"15"},s,"20.2M people");
+ const tw=Math.max(w*4016/20159963,1.2);el("rect",{x:L+sw-tw,y:40,width:tw,height:56,fill:C("--coral")},s);
+ const mx=L+sw-1;el("circle",{cx:mx,cy:68,r:26,fill:"none",stroke:C("--ink"),"stroke-width":3},s);el("line",{x1:mx+18,y1:87,x2:mx+40,y2:112,stroke:C("--ink"),"stroke-width":5,"stroke-linecap":"round"},s);
+ el("text",{x:mx+46,y:136,class:"hand",fill:C("--coral")},s,"4,016 TB cases = a 0.02% sliver");
+ el("text",{x:L,y:26,class:"hand",fill:C("--ink")},s,"everyone in Kazakhstan →");
+})();
+
+/* GAP chart */
+(function(){const W=820,H=360,m={l:46,r:150,t:20,b:34};const s=svg("gap",W,H);
+ const x=v=>m.l+(v-2009.5)/16*(W-m.l-m.r),y=v=>H-m.b-v/120*(H-m.t-m.b);
+ [0,40,80,120].forEach(t=>{el("line",{x1:m.l,x2:W-m.r,y1:y(t),y2:y(t),stroke:C("--grid")},s);el("text",{x:m.l-8,y:y(t)+4,"text-anchor":"end"},s,t)});
+ [2010,2013,2016,2019,2022,2025].forEach(t=>el("text",{x:x(t),y:H-10,"text-anchor":"middle"},s,t));
+ const reg=[[2010,95.3],[2011,86.6],[2012,81.7],[2013,73.4],[2014,66.4],[2015,58.5],[2016,52.7],[2017,52.2],[2018,48.2],[2019,45.6],[2020,35.7],[2021,35.9],[2022,36.5],[2023,34.7],[2024,33.4],[2025,30.1]];
+ // WHO 2023 estimate 49 [40-59] vs registered 34.7
+ el("rect",{x:x(2023)-9,y:y(49),width:18,height:y(34.7)-y(49),fill:`url(#gaph)`,stroke:C("--coral"),"stroke-width":1.5},s);
+ el("path",{d:reg.map((p,i)=>(i?"L":"M")+x(p[0])+","+y(p[1])).join(""),fill:"none",stroke:C("--cyan"),"stroke-width":4,"stroke-linecap":"round",filter:"url(#gapw)","data-anim":"line"},s);
+ el("circle",{cx:x(2025),cy:y(30.1),r:5,fill:C("--cyan")},s);el("text",{x:x(2025)+8,y:y(30.1)+16,"font-weight":"700",fill:C("--cyan")},s,"30.1");
+ el("line",{x1:x(2023),x2:x(2023),y1:y(59),y2:y(40),stroke:C("--coral"),"stroke-width":3},s);
+ [59,40].forEach(v=>el("line",{x1:x(2023)-8,x2:x(2023)+8,y1:y(v),y2:y(v),stroke:C("--coral"),"stroke-width":3},s));
+ el("circle",{cx:x(2023),cy:y(49),r:8,fill:C("--coral")},s);
+ el("text",{x:x(2023)+14,y:y(49)+5,"font-weight":"700",fill:C("--coral")},s,"49");
+ el("text",{x:x(2023)+14,y:y(59)+4,fill:C("--coral")},s,"59");el("text",{x:x(2023)+14,y:y(40)+4,fill:C("--coral")},s,"40");
+ el("text",{x:x(2016.2),y:y(82),class:"hand",fill:C("--coral")},s,"≈ 2,900 people with TB never counted (2023)");
+ el("text",{x:x(2016.2),y:y(82)+24,class:"hand",fill:C("--coral")},s,"somewhere between 1,100 and 4,900 →");
+ el("path",{d:`M${x(2021.6)},${y(74)}Q${x(2022.6)},${y(70)} ${x(2022.85)},${y(52)}`,fill:"none",stroke:C("--coral"),"stroke-width":2},s);
+ el("text",{x:x(2012.3),y:y(104),class:"hand",fill:C("--ink")},s,"registered TB keeps falling…");
+})();
+
+/* CROSSOVER */
+(function(){const W=440,H=280,m={l:36,r:44,t:16,b:30};const s=svg("cross",W,H);
+ const x=v=>m.l+(v-2009.5)/16*(W-m.l-m.r),y=v=>H-m.b-v/120*(H-m.t-m.b);
+ [0,40,80,120].forEach(t=>{el("line",{x1:m.l,x2:W-m.r,y1:y(t),y2:y(t),stroke:C("--grid")},s);el("text",{x:m.l-6,y:y(t)+4,"text-anchor":"end"},s,t)});
+ [2010,2015,2020,2025].forEach(t=>el("text",{x:x(t),y:H-8,"text-anchor":"middle"},s,t));
+ const u=[[2010,107.3],[2011,97.1],[2012,91],[2013,85.9],[2014,78.6],[2015,63.2],[2016,55.6],[2017,54.4],[2018,50.2],[2019,47.7],[2020,35.9],[2021,37.1],[2022,35.8],[2023,33.9],[2024,33],[2025,28.2]];
+ const r=[[2010,81.1],[2011,74],[2012,70.4],[2013,61.2],[2014,50.6],[2015,52.1],[2016,48.9],[2017,49.2],[2018,45.3],[2019,42.6],[2020,35.4],[2021,34.2],[2022,37.5],[2023,36],[2024,34.2],[2025,33.2]];
+ [[u,"--cyan"],[r,"--coral"]].forEach(([d,c])=>el("path",{d:d.map((p,i)=>(i?"L":"M")+x(p[0])+","+y(p[1])).join(""),fill:"none",stroke:C(c),"stroke-width":4,"stroke-linecap":"round",filter:"url(#crossw)","data-anim":"line"},s));
+ el("text",{x:x(2022),y:y(37)-12,"text-anchor":"middle","font-size":"26",fill:C("--sun"),stroke:C("--ink"),"stroke-width":"1"},s,"★");
+ el("text",{x:x(2025)+5,y:y(33.2),"font-weight":"700",fill:C("--coral")},s,"33.2");el("text",{x:x(2025)+5,y:y(28.2)+12,"font-weight":"700",fill:C("--cyan")},s,"28.2");
+ el("text",{x:x(2011),y:y(107)-2,class:"hand",fill:C("--cyan")},s,"cities");el("text",{x:x(2011),y:y(60),class:"hand",fill:C("--coral")},s,"villages");
+})();
+
+/* PEOPLE */
+(function(){const box=document.getElementById("people");
+ const fig=c=>`<svg viewBox="0 0 14 22"><circle cx="7" cy="4" r="3.6" fill="${c}"/><path d="M2 21V12a5 5 0 0 1 10 0v9z" fill="${c}"/></svg>`;
+ [["Men",37,C("--cyan")],["Women",24,C("--coral")]].forEach(([l,n,c])=>{const r=document.createElement("div");r.className="prow";
+  r.innerHTML=`<span>${l}</span><div class="icons">${fig(c).repeat(n)}</div><span class="val" style="color:${c}">${n}</span>`;box.appendChild(r);});
+})();
+
+/* BROKEN chart */
+(function(){const data=[["Abai",0],["Akmola",-7.7],["Aktobe",57.6],["Almaty city",41.8],["Almaty reg.",51.1],["Astana",45.5],["Atyrau",72.9],["E. Kaz.",61.7],["Karaganda",47.1],["Kostanay",72.7],["Kyzylorda",57.8],["Mangystau",1411.1],["N. Kaz.",88.5],["Pavlodar",56.6],["Shymkent",48.1],["Turkestan",42],["Ulytau",0],["W. Kaz.",55.8],["Zhambyl",53.1],["Zhetisu",0]];
+ const W=860,H=340,m={l:40,r:10,t:40,b:70};const s=svg("broken",W,H);const cap=120;
+ const bw=(W-m.l-m.r)/data.length,y=v=>H-m.b-v/cap*(H-m.t-m.b),z=y(0);
+ [0,40,80,120].forEach(t=>{el("line",{x1:m.l,x2:W-m.r,y1:y(t),y2:y(t),stroke:C("--grid")},s);el("text",{x:m.l-6,y:y(t)+4,"text-anchor":"end"},s,t)});
+ data.forEach((d,i)=>{const cx=m.l+i*bw+bw*.15,w=bw*.7;
+  if(d[1]===0){el("rect",{x:cx,y:y(40),width:w,height:z-y(40),fill:"none",stroke:"#b8b3dd","stroke-dasharray":"4 3",rx:3},s);el("text",{x:cx+w/2,y:y(40)-6,"text-anchor":"middle",fill:"#9a95c9"},s,"0")}
+  else if(d[1]<0){el("rect",{x:cx,y:z,width:w,height:y(d[1])-z,fill:C("--coral"),rx:2},s);el("text",{x:cx+w/2,y:y(d[1])+16,"text-anchor":"middle","font-weight":"700",fill:C("--coral")},s,d[1])}
+  else if(d[1]>cap){const top=8;el("path",{d:`M${cx},${z}V${top+10}l${w*.25},-8l${w*.25},10l${w*.25},-10l${w*.25},8V${z}Z`,fill:C("--coral"),"data-anim":"bar","class":"rip",style:"animation-delay:1100ms"},s);
+   el("text",{x:cx-6,y:28,"text-anchor":"end",class:"hand",fill:C("--coral")},s,"1,411 ← off the chart!");}
+  else el("rect",{x:cx,y:y(d[1]),width:w,height:z-y(d[1]),fill:C("--violet"),opacity:.75,rx:3,"data-anim":"bar",style:`animation-delay:${i*45}ms`},s);
+  const t=el("text",{x:cx+w/2,y:H-m.b+14,"text-anchor":"end",transform:`rotate(-40 ${cx+w/2} ${H-m.b+14})`,"font-size":"12"},s,d[0]);
+ });
+ el("line",{x1:m.l,x2:W-m.r,y1:z,y2:z,stroke:C("--ink"),"stroke-width":1.5},s);
+})();
+
+/* EVIDENCE MAP */
+(function(){const W=880,H=400;const s=svg("map",W,H);
+ const cols=["Accuracy","Real programmes","Who it fails","Cost & history"];const cw=(W-40)/4;
+ cols.forEach((c,i)=>{el("rect",{x:20+i*cw+4,y:10,width:cw-8,height:H-20,rx:14,fill:i%2?"#f3f0ff":"#eef6ff"},s);el("text",{x:20+i*cw+cw/2,y:36,"text-anchor":"middle","font-weight":"700",fill:C("--ink"),"font-size":"15"},s,c)});
+ const r=n=>Math.max(9,Math.sqrt(n)/6);
+ const B=[[0,0.3,23566,"--mint","Bangladesh, 5 AIs · 24k people","",12],[0,0.62,774,"--mint","12 AIs vs 11 doctors · 774 X-rays","",13],
+  [1,0.3,14739,"--mint","MSF Manila · 14.7k screened","",14],[1,0.68,0,"--sun","thresholds must be set locally","",14],
+  [2,0.3,0,"--coral","S. Africa: worse for 60+, ex-TB","",15],[2,0.62,0,"--coral","Kenya: same pattern","",18],
+  [3,0.06,0,"--mint","Pakistan: cheaper than doctors","",19],[3,0.24,0,"--sun","Belarus: $11M a year; target it","",30],[3,0.6,714915,"--sun","Glasgow 1957 · 715k X-rayed","",17],[3,0.97,0,"--coral","WHO 1974: stop mass X-ray","",16]];
+ B.forEach(b=>{const cx=20+b[0]*cw+cw/2,cy=50+b[1]*(H-80),rr=b[2]?r(b[2]):12;
+  el("circle",{cx,cy,r:Math.min(rr,70),fill:C(b[3]),opacity:.85},s);
+  el("text",{x:cx,y:cy+Math.min(rr,70)+16,"text-anchor":"middle","font-weight":"600",fill:C("--ink"),"font-size":"12.5"},s,b[4]);
+  if(b[5])el("text",{x:cx,y:cy+5,"text-anchor":"middle",fill:"#fff","font-weight":"700","font-size":"12"},s,b[5]);});
+ // Kazakhstan: the empty chair
+ const kx=20+cw/2,ky=50+0.9*(H-80);
+ el("circle",{cx:kx,cy:ky,r:20,fill:"none",stroke:C("--coral"),"stroke-width":3,"stroke-dasharray":"6 5"},s);
+ el("text",{x:kx,y:ky+6,"text-anchor":"middle","font-weight":"800",fill:C("--coral"),"font-size":"16"},s,"KZ?");
+ el("text",{x:kx+28,y:ky+6,class:"hand",fill:C("--coral")},s,"← no published validation");
+})();
+
+/* CASES bubbles */
+(function(){const box=document.getElementById("cases");
+ const cs=[["Stop TB iNTP, 7 countries","436,938 screened",436938,"13,967 TB",C("--violet"),"N17"],["MSF, Manila","14,739 screened",14739,"633 TB",C("--coral"),"N11"],["Seoul, randomised trial","10,476 people",10476,"AI found 31 vs 13 nodules",C("--cyan"),"N18"]];
+ cs.forEach(c=>{const d=Math.max(70,Math.sqrt(c[2])*0.42);const b=document.createElement("div");b.className="bub";
+  b.innerHTML=`<div class="circ" style="width:${d}px;height:${d}px;background:${c[4]}">${c[3].length<12?c[3]:""}</div><b>${c[0]} <sup><a href="#s${c[5].slice(1)}">${c[5].slice(1)}</a></sup></b><span>${c[1]}${c[3].length>=12?" · "+c[3]:""}</span>`;box.appendChild(b);});
+})();
+
+/* TRADE-OFF waffle */
+const S=5624782,Cc=4016;
+function trade(spec){const W=960,H=230;const s=svg("trade",W,H);
+ const flagged=(S-Cc)*(1-spec)+Cc*.9,missed=Cc*.1,cleared=S-flagged;
+ const L=20,w=W-40;const fw=w*flagged/S;
+ el("rect",{x:L,y:20,width:w-fw,height:110,rx:12,fill:C("--cyan")},s);
+ el("rect",{x:L+w-fw,y:20,width:fw,height:110,rx:12,fill:C("--sun")},s);
+ el("text",{x:L+16,y:62,fill:"#fff","font-weight":"800","font-size":"26"},s,fmt(cleared));
+ el("text",{x:L+16,y:88,fill:"#fff","font-size":"15"},s,`scored "normal" (${Math.round(cleared/S*100)}%)`);
+ el("text",{x:L+w-fw+14,y:62,fill:C("--ink"),"font-weight":"800","font-size":"26"},s,fmt(flagged));
+ el("text",{x:L+w-fw+14,y:88,fill:C("--ink"),"font-size":"15"},s,"flagged for today");
+ // missed dots: 40 dots, each = 10 cases
+ for(let i=0;i<40;i++){el("circle",{cx:L+20+i*16,cy:170,r:6,fill:C("--coral")},s);}
+ el("text",{x:L+20+40*16+16,y:177,class:"hand",fill:C("--coral")},s,`≈ ${fmt(missed)} TB cases (●=10)`);
+ el("text",{x:L,y:220,"font-size":"13"},s,"→ that's why a human still reads the blue block. Cases human readers also miss are unknown.");
+ document.getElementById("specout").textContent=Math.round(spec*100)+"%";}
+const sl=document.getElementById("spec");sl.addEventListener("input",()=>trade(sl.value/100));trade(.70);
+
+/* ENERGY */
+(function(){const s=svg("energy",420,330);
+ el("rect",{x:60,y:10,width:280,height:280,fill:"#dfe4f6",rx:6},s);
+ el("text",{x:200,y:150,"text-anchor":"middle","font-weight":"700",fill:C("--muted"),"font-size":"16"},s,"117,900,000,000 kWh");
+ el("text",{x:200,y:172,"text-anchor":"middle",fill:C("--muted")},s,"Kazakhstan, 2024");
+ el("rect",{x:338,y:288,width:1,height:1,fill:C("--coral")},s);
+ el("circle",{cx:338,cy:288,r:18,fill:"none",stroke:C("--coral"),"stroke-width":3},s);
+ el("text",{x:330,y:258,"text-anchor":"end",class:"hand",fill:C("--coral")},s,"this project: ~0.0000004%");
+})();
+
+/* VERDICT: X-ray film */
+const sws=[...document.querySelectorAll(".sw")];
+function verdict(){const n=sws.filter(x=>x.checked).length;
+ sws.forEach((x,i)=>document.getElementById("les"+(i+1)).classList.toggle("show",!x.checked));
+ const t=document.getElementById("vtext"),st=document.getElementById("vstamp");
+ st.classList.remove("ok","mid","bad");void st.offsetWidth;
+ if(n===4){st.textContent="CLEAR";st.classList.add("ok");t.textContent="Yes: as a second reader, in targeted screening.";t.style.color=C("--mint");}
+ else if(n>=2){st.textContent="FOLLOW-UP";st.classList.add("mid");t.textContent="Not yet. Treat the shadows first.";t.style.color="#b58200";}
+ else{st.textContent="REJECTED";st.classList.add("bad");t.textContent="No. This would automate a system nobody has measured.";t.style.color=C("--coral");}}
+sws.forEach(x=>x.addEventListener("change",verdict));verdict();
+
+/* replay motion when each postcard scrolls into view */
+(function(){
+ if(matchMedia("(prefers-reduced-motion: reduce)").matches||!("IntersectionObserver" in window))return;
+ document.querySelectorAll(".icons").forEach(b=>[...b.children].forEach((c,i)=>c.style.animationDelay=(i*35)+"ms"));
+ document.querySelectorAll(".pipe .step").forEach((c,i)=>c.style.animationDelay=(i*180)+"ms");
+ document.querySelectorAll(".bub .circ").forEach((c,i)=>c.style.animationDelay=(i*250)+"ms");
+ const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting)return;const card=e.target;io.unobserve(card);
+  card.classList.remove("go");void card.offsetWidth;card.classList.add("go");
+  card.querySelectorAll('[data-anim="line"]').forEach(p=>{const L=p.getTotalLength();p.style.transition="none";p.style.strokeDasharray=L;p.style.strokeDashoffset=L;p.getBoundingClientRect();p.style.transition="stroke-dashoffset 1.8s ease-in-out";p.style.strokeDashoffset=0;setTimeout(()=>{p.style.strokeDasharray="";},1900);});
+ }),{threshold:.3});
+ document.querySelectorAll(".postcard").forEach(c=>io.observe(c));
+})();
+
+/* keyboard presenter nav */
+const secs=["top","problem","data","research","solution","bill","verdict","about"].map(i=>document.getElementById(i));
+const links=[...document.querySelectorAll(".bar a")];
+function cur(){let k=0;secs.forEach((s,i)=>{if(s.getBoundingClientRect().top<120)k=i});return k;}
+addEventListener("keydown",e=>{if(e.target.tagName==="INPUT")return;
+ if(e.key==="ArrowRight"||e.key==="PageDown"){e.preventDefault();secs[Math.min(cur()+1,secs.length-1)].scrollIntoView();}
+ if(e.key==="ArrowLeft"||e.key==="PageUp"){e.preventDefault();secs[Math.max(cur()-1,0)].scrollIntoView();}});
+addEventListener("scroll",()=>{const k=cur();links.forEach((a,i)=>a.classList.toggle("on",i===k));},{passive:true});
+})();
+</script>
+</body>
+</html>
